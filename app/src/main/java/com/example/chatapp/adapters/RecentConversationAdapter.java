@@ -4,12 +4,12 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.util.Base64;
 import android.view.LayoutInflater;
+import android.view.View;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.example.chatapp.databinding.IconContainerReciveMessageBinding;
 import com.example.chatapp.databinding.ItemContainerRecentConversionBinding;
 import com.example.chatapp.listeners.ConversionListener;
 import com.example.chatapp.models.ChatMessage;
@@ -17,15 +17,23 @@ import com.example.chatapp.models.User;
 
 import java.util.List;
 
-public class RecentConversationAdapter extends  RecyclerView.Adapter<RecentConversationAdapter.ConversionViewHolder>{
+public class RecentConversationAdapter extends RecyclerView.Adapter<RecentConversationAdapter.ConversionViewHolder> {
 
-    private final List<ChatMessage> chatMessage;
+    private final List<ChatMessage> chatMessages;
     private final ConversionListener conversionListener;
+    private final OnItemLongClickListener longClickListener;
 
+    // Interface for long-click
+    public interface OnItemLongClickListener {
+        void onItemLongClick(ChatMessage message);
+    }
 
-    public RecentConversationAdapter(List<ChatMessage> chatMessage, ConversionListener conversionListener) {
-        this.chatMessage = chatMessage;
+    public RecentConversationAdapter(List<ChatMessage> chatMessages,
+                                     ConversionListener conversionListener,
+                                     OnItemLongClickListener longClickListener) {
+        this.chatMessages = chatMessages;
         this.conversionListener = conversionListener;
+        this.longClickListener = longClickListener;
     }
 
     @NonNull
@@ -37,40 +45,47 @@ public class RecentConversationAdapter extends  RecyclerView.Adapter<RecentConve
                         parent,
                         false
                 )
-
         );
     }
 
     @Override
     public void onBindViewHolder(@NonNull ConversionViewHolder holder, int position) {
-        holder.setdata(chatMessage.get(position));
+        holder.setData(chatMessages.get(position));
     }
 
     @Override
     public int getItemCount() {
-        return chatMessage.size();
+        return chatMessages.size();
     }
 
-    class  ConversionViewHolder extends RecyclerView.ViewHolder{
+    class ConversionViewHolder extends RecyclerView.ViewHolder {
+        ItemContainerRecentConversionBinding binding;
 
-       ItemContainerRecentConversionBinding binding;
+        ConversionViewHolder(ItemContainerRecentConversionBinding binding) {
+            super(binding.getRoot());
+            this.binding = binding;
+        }
 
-       ConversionViewHolder(ItemContainerRecentConversionBinding itemContainerRecentConversionBinding){
-           super(itemContainerRecentConversionBinding.getRoot());
-           binding= itemContainerRecentConversionBinding;
-       }
-       void setdata(ChatMessage chatMessage){
-           binding.iamgeProfile.setImageBitmap(getConversionImage(chatMessage.conversionImage));
-           binding.textName.setText(chatMessage.conversionName);
-           binding.textRecentMessage.setText(chatMessage.message);
-           binding.getRoot().setOnClickListener(v -> {
-               User user = new User();
-               user.id = chatMessage.conversionId;
-               user.name = chatMessage.conversionName;
-               user.Image = chatMessage.conversionImage;
-               conversionListener.onConversionClicked(user);
-           });
-       }
+        void setData(ChatMessage chatMessage) {
+            binding.iamgeProfile.setImageBitmap(getConversionImage(chatMessage.conversionImage));
+            binding.textName.setText(chatMessage.conversionName);
+            binding.textRecentMessage.setText(chatMessage.message);
+
+            // Click to open chat
+            binding.getRoot().setOnClickListener(v -> {
+                User user = new User();
+                user.id = chatMessage.conversionId;
+                user.name = chatMessage.conversionName;
+                user.Image = chatMessage.conversionImage;
+                conversionListener.onConversionClicked(user);
+            });
+
+            // Long press to delete or custom action
+            binding.getRoot().setOnLongClickListener(v -> {
+                longClickListener.onItemLongClick(chatMessage);
+                return true;
+            });
+        }
     }
 
     private Bitmap getConversionImage(String encodedImage) {

@@ -4,12 +4,17 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.media.MediaPlayer;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.Base64;
 import android.view.View;
+import android.widget.Button;
 
 import androidx.activity.EdgeToEdge;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.example.chatapp.R;
 import com.example.chatapp.adapters.ChatAdapter;
 import com.example.chatapp.databinding.ActivityChatBinding;
 import com.example.chatapp.models.ChatMessage;
@@ -102,27 +107,31 @@ public class chatActivity extends BaseActivity {
     private void listenAvailabilityOfReceiver(){
         database.collection(Constants.Key_COLLECTION_USERS).document(
                 receiverUser.id
-        ).addSnapshotListener(chatActivity.this, (value, error)->{
-            if(error != null){
-                return;
+        ).addSnapshotListener(chatActivity.this, (value, error) -> {
+            if (error != null || value == null) return;
+
+            if (value.getLong(Constants.KEY_AVAILABILITY) != null) {
+                int availability = Objects.requireNonNull(value.getLong(Constants.KEY_AVAILABILITY)).intValue();
+                isReceiverAvailabe = availability == 1;
             }
-            if(value != null){
-                if(value.getLong(Constants.KEY_AVAILABILITY) != null){
-                    int availability = Objects.requireNonNull(
-                            value.getLong(Constants.KEY_AVAILABILITY)
-                    ).intValue();
-                    isReceiverAvailabe = availability == 1;
-                }
-                receiverUser.token = value.getString(Constants.KEY_FCM_TOKEN);
-            }
-            if(isReceiverAvailabe){
+
+            receiverUser.token = value.getString(Constants.KEY_FCM_TOKEN);
+            Boolean isTyping = value.getBoolean(Constants.KEY_IS_TYPING);
+
+            if (Boolean.TRUE.equals(isTyping)) {
+                binding.textAvailability.setText("Typing...");
                 binding.textAvailability.setVisibility(View.VISIBLE);
-            }else {
-                binding.textAvailability.setVisibility(View.GONE);
+            } else {
+                if (isReceiverAvailabe) {
+                    binding.textAvailability.setText("Online");
+                    binding.textAvailability.setVisibility(View.VISIBLE);
+                } else {
+                    binding.textAvailability.setVisibility(View.GONE);
+                }
             }
         });
-
     }
+
 
     private void listenMessages(){
         database.collection(Constants.KEY_COLLECTION_CHAT)
@@ -171,6 +180,8 @@ public class chatActivity extends BaseActivity {
 
 
 
+
+
     private Bitmap getBitmapFromEncodedString(String encodedImage){
         byte[] bytes = Base64.decode(encodedImage, Base64.DEFAULT);
         return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
@@ -184,6 +195,17 @@ public class chatActivity extends BaseActivity {
     private void setListeners(){
         binding.imageBack.setOnClickListener(v -> onBackPressed());
         binding.layoutSend.setOnClickListener(v -> sendMessage());
+        binding.imageinfo.setOnClickListener(v -> showDeleteChatDialog());
+        binding.messageInput.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                updateTypingStatus(s.length() > 0);
+            }
+
+            @Override public void afterTextChanged(Editable s) {}
+        });
+
     }
 
     public String getReadableDateTime(Date date){
@@ -233,6 +255,55 @@ public class chatActivity extends BaseActivity {
 
         }
     };
+    private void showDeleteChatDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(chatActivity.this);
+        View view = getLayoutInflater().inflate(R.layout.dialog_delete_chat, null);
+        builder.setView(view);
+
+        AlertDialog alertDialog = builder.create();
+        alertDialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+        alertDialog.show();
+
+        Button buttonCancel = view.findViewById(R.id.buttonCancel);
+        Button buttonConfirm = view.findViewById(R.id.buttonConfirm);
+
+        buttonCancel.setOnClickListener(v -> alertDialog.dismiss());
+
+        buttonConfirm.setOnClickListener(v -> {
+            deleteChatForBothUsers(); // your delete method
+            alertDialog.dismiss();
+        });
+    }
+
+
+    private void deleteChatForBothUsers() {
+        // Get chat collection reference
+        database.collection(Constants.KEY_COLLECTION_CHAT)
+                .whereIn(Constants.KEY_SENDER_ID, List.of(preferenceManager.getString(Constants.KEY_USER_ID), receiverUser.id))
+                .whereIn(Constants.KEY_RECEIVER_ID, List.of(preferenceManager.getString(Constants.KEY_USER_ID), receiverUser.id))
+                .get()
+                .addOnSuccessListener(queryDocumentSnapshots -> {
+                    for (DocumentSnapshot documentSnapshot : queryDocumentSnapshots) {
+                        documentSnapshot.getReference().delete();
+                    }
+                    chatMessages.clear();
+                    chatAdapter.notifyDataSetChanged();
+                    binding.chatRecyclerView.setVisibility(View.GONE);
+                });
+        // Delete conversation
+        if (conversionId != null) {
+            database.collection(Constants.KEY_COLLECTION_CONVERSATIONS)
+                    .document(conversionId)
+                    .delete();
+        }
+    }
+
+    private void updateTypingStatus(boolean isTyping) {
+        database.collection(Constants.Key_COLLECTION_USERS)
+                .document(preferenceManager.getString(Constants.KEY_USER_ID))
+                .update(Constants.KEY_IS_TYPING, isTyping);
+    }
+
 
     @Override
     protected void onResume() {

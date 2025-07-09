@@ -41,6 +41,17 @@
         android:tint="@color/white"
         app:layout_constraintTop_toTopOf="parent"/>
 
+   <androidx.appcompat.widget.AppCompatImageView
+       android:layout_width="@dimen/_30sdp"
+       android:layout_height="@dimen/_30sdp"
+       android:id="@+id/imageinfo"
+       android:padding="@dimen/_4sdp"
+       android:src="@drawable/ic_info"
+       android:layout_marginTop="@dimen/_12sdp"
+       android:layout_marginRight="@dimen/_16sdp"
+       android:layout_marginEnd="@dimen/_16sdp"
+       app:layout_constraintEnd_toEndOf="parent"
+       app:layout_constraintTop_toTopOf="parent"/>
 
     <TextView
         android:id="@+id/textName"
@@ -56,6 +67,7 @@
         android:textColor="@color/white"
         android:textSize="@dimen/_11ssp"
         android:textStyle="bold"
+        app:layout_constraintEnd_toStartOf="@id/imageinfo"
         app:layout_constraintEnd_toEndOf="@id/headerbackground"
         app:layout_constraintStart_toEndOf="@id/imageBack"
         app:layout_constraintTop_toTopOf="@id/imageBack"

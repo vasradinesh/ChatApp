@@ -3,11 +3,13 @@ package com.example.chatapp.activities;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.net.Uri;
 import android.os.Bundle;
 import android.util.Base64;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
@@ -23,12 +25,15 @@ import com.example.chatapp.utilities.Constants;
 import com.example.chatapp.utilities.PreferenceManager;
 import com.google.firebase.firestore.DocumentChange;
 import com.google.firebase.firestore.DocumentReference;
+import com.google.firebase.firestore.DocumentSnapshot;
 import com.google.firebase.firestore.EventListener;
 import com.google.firebase.firestore.FieldValue;
 import com.google.firebase.firestore.FirebaseFirestore;
 import com.google.firebase.firestore.QuerySnapshot;
 import com.google.firebase.messaging.FirebaseMessaging;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -40,7 +45,8 @@ public class MainActivity extends BaseActivity implements ConversionListener {
     private List<ChatMessage> conversations;
     private RecentConversationAdapter conversationAdapter;
     FirebaseFirestore database;
-
+    private static final int REQUEST_CODE_SELECT_IMAGE = 101;
+    private Uri selectedImageUri;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -59,7 +65,10 @@ public class MainActivity extends BaseActivity implements ConversionListener {
 
     private void init(){
         conversations = new ArrayList<>();
-        conversationAdapter = new RecentConversationAdapter(conversations,this);
+        conversationAdapter = new RecentConversationAdapter(conversations, this, chatMessage -> {
+            // Long click logic: show confirmation dialog and delete
+            showDeleteDialog(chatMessage);
+        });
         binding.conversationRecycleview.setAdapter(conversationAdapter);
         database = FirebaseFirestore.getInstance();
     }
@@ -68,6 +77,8 @@ public class MainActivity extends BaseActivity implements ConversionListener {
         binding.imageSignout.setOnClickListener(v -> showCustomSignOutDialog());
         binding.fabNewChat.setOnClickListener(v ->
                 startActivity(new Intent(getApplicationContext(), UserActivity.class)));
+        binding.imageProfile.setOnClickListener(v -> showProfileDialog());
+
     }
 
     private void loadUserDetails() {
@@ -193,4 +204,108 @@ public class MainActivity extends BaseActivity implements ConversionListener {
         intent.putExtra(Constants.KEY_USER,user);
         startActivity(intent);
     }
+
+    private void showDeleteDialog(ChatMessage chatMessage) {
+        View view = LayoutInflater.from(this).inflate(R.layout.dialog_delete_chat, null);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setView(view)
+                .setCancelable(false)
+                .create();
+
+        Button buttonCancel = view.findViewById(R.id.buttonCancel);
+        Button buttonConfirm = view.findViewById(R.id.buttonConfirm);
+
+        // Customize button text for delete action
+        buttonConfirm.setText("Delete");
+
+        buttonCancel.setOnClickListener(v -> dialog.dismiss());
+
+        buttonConfirm.setOnClickListener(v -> {
+            deleteConversation(chatMessage);  // Your logic to delete chat
+            dialog.dismiss();
+        });
+
+        dialog.show();
+    }
+    private void deleteConversation(ChatMessage chatMessage) {
+        FirebaseFirestore.getInstance()
+                .collection(Constants.KEY_COLLECTION_CONVERSATIONS)
+                .whereEqualTo(Constants.KEY_SENDER_ID, chatMessage.senderId)
+                .whereEqualTo(Constants.KEY_RECEIVER_ID, chatMessage.receiverId)
+                .get()
+                .addOnSuccessListener(queryDocumentSnapshots -> {
+                    for (DocumentSnapshot doc : queryDocumentSnapshots) {
+                        doc.getReference().delete();
+                    }
+                    conversations.remove(chatMessage);
+                    conversationAdapter.notifyDataSetChanged(); // or use notifyItemRemoved
+                    showToast("Chat deleted");
+                })
+                .addOnFailureListener(e -> showToast("Failed to delete chat"));
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == 101 && resultCode == RESULT_OK && data != null) {
+            try {
+                Uri imageUri = data.getData();
+                InputStream inputStream = getContentResolver().openInputStream(imageUri);
+                Bitmap bitmap = BitmapFactory.decodeStream(inputStream);
+                binding.imageProfile.setImageBitmap(bitmap);  // Update UI instantly
+
+                // Save in shared pref
+                String encodedImage = encodeImage(bitmap);
+                preferenceManager.putString(Constants.KEY_IMAGE, encodedImage);
+
+                // Save in Firestore
+                FirebaseFirestore.getInstance().collection(Constants.Key_COLLECTION_USERS)
+                        .document(preferenceManager.getString(Constants.KEY_USER_ID))
+                        .update(Constants.KEY_IMAGE, encodedImage)
+                        .addOnSuccessListener(unused -> showToast("Profile updated"))
+                        .addOnFailureListener(e -> showToast("Failed to update profile"));
+
+            } catch (Exception e) {
+                showToast("Error loading image");
+            }
+        }
+    }
+
+    private void showProfileDialog() {
+        View view = LayoutInflater.from(this).inflate(R.layout.dialog_profile_image, null);
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setView(view)
+                .create();
+
+        ImageView imageView = view.findViewById(R.id.profileImageView);
+        Button buttonChange = view.findViewById(R.id.buttonChange);
+        Button buttonClose = view.findViewById(R.id.buttonClose);
+
+        // Set current profile image
+        byte[] bytes = Base64.decode(preferenceManager.getString(Constants.KEY_IMAGE), Base64.DEFAULT);
+        Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+        imageView.setImageBitmap(bitmap);
+
+        buttonClose.setOnClickListener(v -> dialog.dismiss());
+
+        buttonChange.setOnClickListener(v -> {
+            dialog.dismiss();
+            // Start gallery intent
+            Intent intent = new Intent(Intent.ACTION_PICK);
+            intent.setType("image/*");
+            startActivityForResult(intent, 101);
+        });
+
+        dialog.show();
+    }
+
+    private String encodeImage(Bitmap bitmap) {
+        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 50, stream);
+        byte[] bytes = stream.toByteArray();
+        return Base64.encodeToString(bytes, Base64.DEFAULT);
+    }
+
+
 }
